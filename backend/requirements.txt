@@ -1,0 +1,13 @@
+fastapi==0.143.2
+uvicorn[standard]==0.54.0
+pydantic==2.14.1
+pydantic-settings==2.16.0
+sqlalchemy[asyncio]==2.1.4
+asyncpg==0.32.0
+alembic==1.20.0
+redis[hiredis]==8.1.0
+httpx==0.28.1
+websockets==17.2
+pyotp==2.10.0
+firebase-admin==7.7.0
+tzdata==2026.5
