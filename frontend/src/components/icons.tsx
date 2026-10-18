@@ -95,13 +95,6 @@ export const MoonIcon = (p: IconProps) => (
   </Icon>
 );
 
-export const MonitorIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <rect x="2" y="3" width="20" height="14" rx="2" />
-    <path d="M8 21h8M12 17v4" />
-  </Icon>
-);
-
 export const LogOutIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

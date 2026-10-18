@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { nextTheme } from "./theme";
+import { otherTheme } from "./theme";
 
-describe("nextTheme", () => {
-  it("cycles system → light → dark → system", () => {
-    expect(nextTheme("system")).toBe("light");
-    expect(nextTheme("light")).toBe("dark");
-    expect(nextTheme("dark")).toBe("system");
+describe("otherTheme", () => {
+  it("toggles between light and dark", () => {
+    expect(otherTheme("light")).toBe("dark");
+    expect(otherTheme("dark")).toBe("light");
   });
 });

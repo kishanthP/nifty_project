@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Color tokens: light by default, dark when the OS is in dark mode, unless the user picked a
-   theme in the header (data-theme on <html>). Keep the two dark blocks identical. */
+/* Color tokens: the header toggle sets data-theme on <html>. Before the user picks one, the
+   device's light/dark setting decides. Keep the two dark blocks identical. */
 :root {
   --bg: #f4f6f9;
   --surface: #ffffff;

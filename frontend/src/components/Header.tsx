@@ -2,28 +2,23 @@ import { toast } from "sonner";
 
 import { useAuth } from "../auth/context";
 import type { usePushNotifications } from "../hooks/usePushNotifications";
-import { nextTheme, setThemeChoice, type ThemeChoice, useTheme } from "../lib/theme";
-import { BellIcon, BellOffIcon, LogOutIcon, MonitorIcon, MoonIcon, SunIcon } from "./icons";
+import { otherTheme, setTheme, useTheme } from "../lib/theme";
+import { BellIcon, BellOffIcon, LogOutIcon, MoonIcon, SunIcon } from "./icons";
 
 type Push = ReturnType<typeof usePushNotifications>;
 
-const THEME_LABEL: Record<ThemeChoice, string> = { system: "System", light: "Light", dark: "Dark" };
-const THEME_ICON = { system: MonitorIcon, light: SunIcon, dark: MoonIcon };
-
 function ThemeToggle() {
-  const { choice } = useTheme();
-  const next = nextTheme(choice);
-  const Icon = THEME_ICON[choice];
-  const label = `Theme: ${THEME_LABEL[choice]} (click for ${THEME_LABEL[next]})`;
+  const { theme, dark } = useTheme();
+  const label = dark ? "Switch to light mode" : "Switch to dark mode";
   return (
     <button
       type="button"
-      onClick={() => setThemeChoice(next)}
+      onClick={() => setTheme(otherTheme(theme))}
       className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-fg"
       title={label}
       aria-label={label}
     >
-      <Icon />
+      {dark ? <SunIcon /> : <MoonIcon />}
     </button>
   );
 }
