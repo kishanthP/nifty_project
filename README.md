@@ -77,7 +77,8 @@ copy .env.example .env
 docker compose up --build
 ```
 
-Then open **http://localhost:5173**. The default `.env` uses:
+Then open **http://localhost:5174**. Port 5174 is used so this app can run next to another
+Vite app on the default 5173. The default `.env` uses:
 - `MARKET_DATA_PROVIDER=mock`: fake prices that move every second, so you can test alerts at any time.
 - `AUTH_DEV_MODE=true`: a "Dev login" with just an email, so you can try it before setting up Firebase.
 
@@ -92,26 +93,46 @@ Other useful URLs (8000 is the default `API_PORT`; use your value if you changed
 
 ## Step 1: Real NIFTY prices from Angel One
 
-1. Log in at **https://smartapi.angelone.in** with your Angel One account and **create an app**
-   (choose the market-data type, e.g. "Market Feeds" if offered). Copy the **API key**.
-2. Turn on **TOTP** for your account (Angel One app or website → enable TOTP). When it shows the QR code,
-   also copy the **secret key** (the text version of the QR code). This is your TOTP secret.
-3. Edit `.env`:
+You need four values. Never paste them into chats or screenshots.
+
+| `.env` setting | What it is | Where to get it |
+|---|---|---|
+| `ANGELONE_CLIENT_CODE` | Your Angel One client ID, e.g. `A123456` | Angel One app → Profile |
+| `ANGELONE_PIN` | Your **4-digit MPIN** (the PIN that opens the app), **not** your password | You set it in the app |
+| `ANGELONE_API_KEY` | The API key of your SmartAPI app | Step 1 below |
+| `ANGELONE_TOTP_SECRET` | The **secret key text** shown with the TOTP QR code (letters and digits, about 32 long), **not** the 6-digit code | Step 2 below |
+
+1. **API key:** go to **https://smartapi.angelone.in**, sign up or log in with your client ID, then
+   **My Apps → Create App**. Any app name works. Choose the market-data type ("Market Feeds") if offered,
+   and use `https://localhost` as the redirect URL. Leave the static IP empty if the form allows that.
+   Copy the **API key**. You don't need the secret key.
+2. **TOTP secret:** on the SmartAPI site, open **Enable TOTP** (under your profile, or
+   https://smartapi.angelone.in/enable-totp). Enter your client ID and MPIN, then the OTP sent to your
+   phone or email. A QR code appears.
+   - Copy the **text key shown with the QR code**. That is `ANGELONE_TOTP_SECRET`.
+   - Also scan the QR code with Google Authenticator. Then you can still log in yourself.
+3. Fill in the four values in `.env`, with no quotes and no spaces around `=`. Leave
+   `MARKET_DATA_PROVIDER=mock` for now.
+4. **Test them.** This works any time, including weekends:
+   ```
+   docker compose run --rm --no-deps api python -m app.tools.check_angelone
+   ```
+   It makes exactly **one** login attempt, then fetches the NIFTY 50 price, chart data and the live feed.
+   It never prints your secrets. If something is wrong, it says which value to fix.
+5. When the check says **All good**, switch the app over in `.env`:
    ```
    MARKET_DATA_PROVIDER=angelone
-   ANGELONE_API_KEY=your_api_key
-   ANGELONE_CLIENT_CODE=your_client_id   # e.g. A123456
-   ANGELONE_PIN=your_4_digit_pin
-   ANGELONE_TOTP_SECRET=your_totp_secret
-   # optional safety net:
-   FALLBACK_PROVIDER=yahoo
+   FALLBACK_PROVIDER=yahoo      # optional safety net if Angel One goes quiet
    ```
-4. Restart the worker: `docker compose restart worker`, then watch it with `docker compose logs -f worker`.
+   Apply it with `docker compose up -d`. (`docker compose restart` does **not** re-read `.env`.)
+   Watch the worker with `docker compose logs -f worker`. You should see `Logged in to Angel One`.
 
 Notes:
 - Live ticks flow **09:15–15:30 IST on trading days**. Outside those hours you see the last price.
-- No static IP is needed. Angel One's static-IP rule applies only to placing orders, and this app never places orders.
-- Keep `.env` private. Your PIN and TOTP secret can log in to your account. `.env` is git-ignored.
+- If Angel One refuses the login, the worker tries **once more** a minute later, then **stops trying**.
+  Repeated wrong logins could get your account blocked. Fix `.env` and run `docker compose up -d` to try again.
+- The app only reads prices and never places orders. Angel One's static-IP rule is for placing orders.
+- Keep `.env` private. Your MPIN and TOTP secret can log in to your account. `.env` is git-ignored.
 
 ## Step 2: Google login and push notifications (Firebase, free)
 
@@ -226,7 +247,10 @@ Run only Postgres and Redis in Docker (`docker compose up postgres redis`), then
 | Problem | Fix |
 |---|---|
 | "No price yet" on the dashboard | Check the worker: `docker compose logs -f worker` |
-| Worker says "Angel One auth problem" | Check the PIN, client code and TOTP secret. The TOTP secret is the long text, not the 6-digit code. |
+| Worker says "Angel One refused the login" | Run the check command in Step 1. It names the value to fix. |
+| `AB1050` (invalid TOTP) | `ANGELONE_TOTP_SECRET` must be the long key text, not the 6-digit code. If the key is right, the clock is off: quit and restart Docker Desktop. |
+| `AB7001` | Put your 4-digit **MPIN** in `ANGELONE_PIN`, not your trading password |
+| Worker says "Login stopped after 2 refused attempts" | On purpose, to protect your account. Fix `.env`, run the check, then `docker compose up -d` |
 | Price not moving | Normal outside 09:15–15:30 IST, on weekends and on NSE holidays (`backend/app/data/nse_holidays.json`) |
 | "Push not set up" in the top bar | Fill all `VITE_FIREBASE_*` values and `VITE_FIREBASE_VAPID_KEY`, then rebuild |
 | Notifications show "logged only" | The backend can't find `backend/secrets/firebase-service-account.json` |

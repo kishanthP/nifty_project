@@ -5,8 +5,19 @@ import httpx
 import pyotp
 import pytest
 
-from app.services.market_data.angelone import AngelOneClient, AngelOneProvider, parse_tick
-from app.services.market_data.base import InstrumentRef, ProviderAuthError, ProviderConfigError
+from app.services.market_data.angelone import (
+    AngelOneClient,
+    AngelOneProvider,
+    LoginPaused,
+    LoginRejected,
+    parse_tick,
+)
+from app.services.market_data.base import (
+    InstrumentRef,
+    ProviderAuthError,
+    ProviderConfigError,
+    ProviderError,
+)
 
 NIFTY = InstrumentRef(
     id=1, symbol="NIFTY50", name="NIFTY 50", angelone_exchange_type=1, angelone_token="99926000"
@@ -111,6 +122,57 @@ async def test_snapshot_maps_quote_fields() -> None:
     assert quote.symbol == "NIFTY50" and quote.ltp == 22563.4
     assert quote.prev_close == 22550 and quote.change == 13.4
     assert quote.exchange_ts is not None and quote.exchange_ts.hour == 15
+
+
+def _refusing_handler(code: str, calls: list[str]):  # noqa: ANN202
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"status": False, "errorcode": code, "message": "Invalid"})
+
+    return handler
+
+
+async def test_refused_login_explains_what_to_fix() -> None:
+    with pytest.raises(LoginRejected) as caught:
+        await _client(_refusing_handler("AB1050", [])).login()
+    assert "ANGELONE_TOTP_SECRET" in str(caught.value)
+
+
+async def test_server_side_login_failure_is_temporary() -> None:
+    with pytest.raises(ProviderError) as caught:
+        await _client(_refusing_handler("AB2001", [])).login()
+    assert not isinstance(caught.value, LoginRejected)
+
+
+def _refusing_provider(calls: list[str], retry_seconds: float) -> AngelOneProvider:
+    http = httpx.AsyncClient(transport=httpx.MockTransport(_refusing_handler("AB1050", calls)))
+    return AngelOneProvider(
+        "key", "A123", "1234", pyotp.random_base32(), http=http, login_retry_seconds=retry_seconds
+    )
+
+
+async def test_login_stops_after_two_refusals() -> None:
+    calls: list[str] = []
+    provider = _refusing_provider(calls, retry_seconds=0)
+    for _ in range(2):
+        with pytest.raises(LoginRejected):
+            await provider._ensure_session()
+    for _ in range(3):
+        with pytest.raises(LoginPaused) as caught:
+            await provider._ensure_session()
+        assert caught.value.retry_in is None
+    assert len(calls) == 2  # never a third attempt with the wrong details
+
+
+async def test_waits_before_second_login_attempt() -> None:
+    calls: list[str] = []
+    provider = _refusing_provider(calls, retry_seconds=60)
+    with pytest.raises(LoginRejected):
+        await provider._ensure_session()
+    with pytest.raises(LoginPaused) as caught:
+        await provider._ensure_session()  # e.g. the chart job, right after the feed's attempt
+    assert caught.value.retry_in is not None and caught.value.retry_in > 50
+    assert len(calls) == 1
 
 
 def test_missing_credentials_is_config_error() -> None:

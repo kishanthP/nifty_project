@@ -8,7 +8,9 @@ export default defineConfig({
   envDir: "..",
   plugins: [react(), tailwindcss()],
   server: {
-    port: 5173,
+    // 5174 so this app can run next to another Vite app on the default 5173.
+    port: 5174,
+    strictPort: true,
     host: true,
     // File-change events don't cross the Docker-on-Windows boundary, so poll there.
     watch: process.env.VITE_USE_POLLING === "true" ? { usePolling: true, interval: 300 } : undefined,

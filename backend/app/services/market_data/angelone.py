@@ -50,7 +50,45 @@ EXCHANGE_NAMES = {1: "NSE", 3: "BSE"}
 WS_MODE_QUOTE = 2  # LTP + open/high/low/close
 # Error codes that mean "log in again".
 AUTH_ERROR_CODES = {"AG8001", "AG8002", "AG8003", "AB1010", "AB8050", "AB8051"}
+# Login failures on Angel One's side ("something went wrong"): temporary, safe to retry.
+TRANSIENT_ERROR_CODES = {"AB1004", "AB2000", "AB2001"}
 NO_TICK_TIMEOUT = 30.0
+
+# Any other refused login means wrong details. Repeating a wrong login can get the
+# account blocked, so the worker tries once more (with a fresh TOTP code) and then stops.
+MAX_LOGIN_REJECTIONS = 2
+LOGIN_RETRY_SECONDS = 60.0
+LOGIN_PAUSED_LOG_SECONDS = 600.0
+LOGIN_HINTS = {
+    "AB1050": (
+        "The TOTP code was wrong. ANGELONE_TOTP_SECRET must be the secret key text shown "
+        "with the QR code, not a 6-digit code, and the computer's clock must be correct."
+    ),
+    "AB7001": "Put your 4-digit MPIN in ANGELONE_PIN, not your trading password.",
+}
+DEFAULT_LOGIN_HINT = (
+    "Check ANGELONE_API_KEY, ANGELONE_CLIENT_CODE (your client ID), "
+    "ANGELONE_PIN (your 4-digit MPIN) and ANGELONE_TOTP_SECRET in .env."
+)
+
+
+class LoginRejected(ProviderAuthError):
+    """Angel One refused the login details. Retrying with the same details won't help."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.hint = LOGIN_HINTS.get(code, DEFAULT_LOGIN_HINT)
+        super().__init__(
+            f"Angel One refused the login ({code or 'no code'}: {message}). {self.hint}"
+        )
+
+
+class LoginPaused(ProviderError):
+    """No login attempt is made right now, to protect the account from being blocked."""
+
+    def __init__(self, reason: str, retry_in: float | None = None) -> None:
+        self.retry_in = retry_in  # None = paused until the worker restarts
+        super().__init__(reason)
 
 
 # ---------------------------------------------------------------- binary ticks
@@ -137,7 +175,8 @@ class AngelOneClient:
             headers["Authorization"] = f"Bearer {self.jwt}"
         return headers
 
-    async def _post(self, path: str, payload: dict[str, Any], *, auth: bool = True) -> Any:
+    async def _send(self, path: str, payload: dict[str, Any], *, auth: bool) -> dict[str, Any]:
+        """POST and return the JSON body. Network and HTTP problems raise ProviderError."""
         try:
             response = await self._http.post(
                 BASE_URL + path, json=payload, headers=self._headers(auth)
@@ -148,28 +187,48 @@ class AngelOneClient:
             raise ProviderAuthError(f"Angel One rejected the session (HTTP {response.status_code})")
         try:
             body = response.json()
-        except ValueError as exc:
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
             raise ProviderError(
                 f"Angel One returned HTTP {response.status_code}: {response.text[:200]}"
-            ) from exc
-        if body.get("status") is True or body.get("success") is True:
-            return body.get("data")
+            )
+        return body
+
+    @staticmethod
+    def _succeeded(body: dict[str, Any]) -> bool:
+        return body.get("status") is True or body.get("success") is True
+
+    @staticmethod
+    def _error(body: dict[str, Any]) -> tuple[str, str]:
         code = str(body.get("errorcode") or body.get("errorCode") or "")
-        message = str(body.get("message") or "unknown error")
+        return code, str(body.get("message") or "unknown error")
+
+    async def _post(self, path: str, payload: dict[str, Any]) -> Any:
+        body = await self._send(path, payload, auth=True)
+        if self._succeeded(body):
+            return body.get("data")
+        code, message = self._error(body)
         if code in AUTH_ERROR_CODES or "token" in message.lower():
             raise ProviderAuthError(f"{code} {message}".strip())
         raise ProviderError(f"Angel One error {code}: {message}")
 
     async def login(self) -> Session:
+        """One login attempt. Raises LoginRejected when Angel One refuses the details."""
         payload = {"clientcode": self.client_code, "password": self._pin, "totp": self._totp.now()}
         try:
-            data = await self._post(LOGIN_PATH, payload, auth=False)
-        except ProviderAuthError:
-            raise
-        except ProviderError as exc:
-            raise ProviderAuthError(f"Login failed: {exc}") from exc
-        if not data or not data.get("jwtToken") or not data.get("feedToken"):
-            raise ProviderAuthError("Login response did not include tokens")
+            body = await self._send(LOGIN_PATH, payload, auth=False)
+        except ProviderAuthError as exc:
+            # The account details were not checked yet, so this is safe to retry.
+            raise ProviderError(f"{exc}. If this keeps happening, check ANGELONE_API_KEY.") from exc
+        if not self._succeeded(body):
+            code, message = self._error(body)
+            if code in TRANSIENT_ERROR_CODES:
+                raise ProviderError(f"Angel One login failed temporarily: {code} {message}")
+            raise LoginRejected(code, message)
+        data = body.get("data") or {}
+        if not data.get("jwtToken") or not data.get("feedToken"):
+            raise ProviderError("Angel One login response did not include tokens")
         self.jwt = str(data["jwtToken"]).removeprefix("Bearer ").strip()
         return Session(
             jwt=self.jwt, feed_token=data["feedToken"], logged_in_at=market_hours.now_ist()
@@ -195,6 +254,47 @@ class AngelOneClient:
         await self._http.aclose()
 
 
+# ---------------------------------------------------------------- helpers
+def mask(value: str) -> str:
+    """'A123456' -> 'A1***56', enough to spot a typo without showing the whole value."""
+    if len(value) <= 4:
+        return "*" * len(value)
+    return value[:2] + "*" * (len(value) - 4) + value[-2:]
+
+
+def ws_headers(api_key: str, client_code: str, session: Session) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {session.jwt}",
+        "x-api-key": api_key,
+        "x-client-code": client_code,
+        "x-feed-token": session.feed_token,
+    }
+
+
+def subscribe_message(tokens_by_type: dict[int, list[str]]) -> str:
+    return json.dumps(
+        {
+            "correlationID": "sharemkt01",
+            "action": 1,
+            "params": {
+                "mode": WS_MODE_QUOTE,
+                "tokenList": [{"exchangeType": t, "tokens": v} for t, v in tokens_by_type.items()],
+            },
+        }
+    )
+
+
+def intraday_window() -> tuple[datetime, datetime]:
+    """Start and end of the latest trading session (up to now if it's still running)."""
+    day = market_hours.last_session_date()
+    start = datetime.combine(day, market_hours.MARKET_OPEN, tzinfo=market_hours.IST)
+    end = min(
+        market_hours.now_ist(),
+        datetime.combine(day, market_hours.MARKET_CLOSE, tzinfo=market_hours.IST),
+    )
+    return start, end
+
+
 # ---------------------------------------------------------------- provider
 def _parse_feed_time(value: Any) -> datetime | None:
     # REST quotes stamp time like "15-Oct-2026 15:29:59" (IST).
@@ -216,6 +316,7 @@ class AngelOneProvider(MarketDataProvider):
         relogin_time: str = "08:30",
         http: httpx.AsyncClient | None = None,
         ws_connect: Callable[..., Any] = websockets.connect,
+        login_retry_seconds: float = LOGIN_RETRY_SECONDS,
     ) -> None:
         if not all([api_key, client_code, pin, totp_secret]):
             raise ProviderConfigError(
@@ -231,6 +332,10 @@ class AngelOneProvider(MarketDataProvider):
         self._relogin_at = time.fromisoformat(relogin_time)
         self._session: Session | None = None
         self._login_lock = asyncio.Lock()
+        self._login_retry_seconds = login_retry_seconds
+        self._rejections = 0
+        self._next_login_at = 0.0  # event-loop clock
+        self._paused_reason: str | None = None
         self._snapshots: dict[str, Quote] = {}
 
     # --- session handling ---
@@ -243,9 +348,30 @@ class AngelOneProvider(MarketDataProvider):
 
     async def _ensure_session(self) -> Session:
         async with self._login_lock:
-            if self._session is None or self._session_stale():
+            if self._session is not None and not self._session_stale():
+                return self._session
+            if self._paused_reason:
+                raise LoginPaused(self._paused_reason)
+            now = asyncio.get_running_loop().time()
+            if now < self._next_login_at:
+                raise LoginPaused(
+                    "Waiting before trying the Angel One login again",
+                    retry_in=self._next_login_at - now,
+                )
+            try:
                 self._session = await self._client.login()
-                logger.info("Logged in to Angel One as %s", self._client.client_code)
+            except LoginRejected as exc:
+                self._rejections += 1
+                if self._rejections >= MAX_LOGIN_REJECTIONS:
+                    self._paused_reason = (
+                        f"Login stopped after {self._rejections} refused attempts so your "
+                        f"account isn't blocked. {exc.hint} Then run: docker compose up -d"
+                    )
+                else:
+                    self._next_login_at = now + self._login_retry_seconds
+                raise
+            self._rejections = 0
+            logger.info("Logged in to Angel One as %s", mask(self._client.client_code))
             return self._session
 
     def _drop_session(self) -> None:
@@ -341,37 +467,25 @@ class AngelOneProvider(MarketDataProvider):
 
     async def _ws_stream(self, instruments: Sequence[InstrumentRef]) -> AsyncIterator[Quote]:
         session = await self._ensure_session()
-        headers = {
-            "Authorization": f"Bearer {session.jwt}",
-            "x-api-key": self._client.api_key,
-            "x-client-code": self._client.client_code,
-            "x-feed-token": session.feed_token,
-        }
         tokens_by_type: dict[int, list[str]] = defaultdict(list)
         lookup: dict[tuple[int, str], InstrumentRef] = {}
         for inst in instruments:
             exchange_type = inst.angelone_exchange_type or 0
             tokens_by_type[exchange_type].append(inst.angelone_token or "")
             lookup[(exchange_type, inst.angelone_token or "")] = inst
-        subscribe = {
-            "correlationID": "sharemkt01",
-            "action": 1,
-            "params": {
-                "mode": WS_MODE_QUOTE,
-                "tokenList": [{"exchangeType": t, "tokens": v} for t, v in tokens_by_type.items()],
-            },
-        }
         try:
             connection = self._ws_connect(
                 WS_URL,
-                additional_headers=headers,
+                additional_headers=ws_headers(
+                    self._client.api_key, self._client.client_code, session
+                ),
                 ping_interval=20,
                 ping_timeout=20,
                 open_timeout=15,
                 close_timeout=5,
             )
             async with connection as ws:
-                await ws.send(json.dumps(subscribe))
+                await ws.send(subscribe_message(tokens_by_type))
                 logger.info("Angel One live feed connected (%d instruments)", len(instruments))
                 heartbeat = asyncio.create_task(self._heartbeat(ws))
                 try:
@@ -420,6 +534,16 @@ class AngelOneProvider(MarketDataProvider):
                     yield quote
             except ProviderConfigError:
                 raise
+            except LoginRejected as exc:
+                logger.error("%s", exc)
+                self._drop_session()
+                await asyncio.sleep(self._login_retry_seconds)
+            except LoginPaused as exc:
+                if exc.retry_in is None:
+                    logger.error("Angel One: %s", exc)
+                await asyncio.sleep(
+                    LOGIN_PAUSED_LOG_SECONDS if exc.retry_in is None else max(1.0, exc.retry_in)
+                )
             except ProviderAuthError as exc:
                 logger.warning("Angel One auth problem: %s (will log in again)", exc)
                 self._drop_session()
@@ -432,12 +556,7 @@ class AngelOneProvider(MarketDataProvider):
     async def fetch_intraday(self, instrument: InstrumentRef) -> list[Candle]:
         if not instrument.angelone_token or instrument.angelone_exchange_type not in EXCHANGE_NAMES:
             return []
-        day = market_hours.last_session_date()
-        start = datetime.combine(day, market_hours.MARKET_OPEN, tzinfo=market_hours.IST)
-        end = min(
-            market_hours.now_ist(),
-            datetime.combine(day, market_hours.MARKET_CLOSE, tzinfo=market_hours.IST),
-        )
+        start, end = intraday_window()
         rows = await self._call(
             self._client.candles,
             EXCHANGE_NAMES[instrument.angelone_exchange_type],

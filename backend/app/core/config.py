@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # --- General ---
     environment: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
-    frontend_url: str = "http://localhost:5173"
-    cors_origins: str = "http://localhost:5173"
+    frontend_url: str = "http://localhost:5174"
+    cors_origins: str = "http://localhost:5174"
 
     # --- Storage ---
     database_url: str = "postgresql+asyncpg://share_market:share_market@localhost:5432/share_market"
