@@ -26,8 +26,14 @@ class Settings(BaseSettings):
     # --- Storage ---
     database_url: str = "postgresql+asyncpg://share_market:share_market@localhost:5432/share_market"
     test_database_url: str | None = None
+    # Hosted databases have small connection limits (Supabase free: about 15).
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
     redis_url: str = "redis://localhost:6379/0"
     test_redis_url: str | None = None
+    # Run the market worker inside the API process, for hosts without background
+    # workers (Render's free plan). Normally the worker is a separate service.
+    run_worker_in_api: bool = False
 
     # --- Market data ---
     market_data_provider: ProviderName = "mock"
@@ -49,6 +55,9 @@ class Settings(BaseSettings):
 
     # --- Firebase ---
     firebase_credentials_file: str | None = None
+    # Alternative for hosts without secret files: the service-account JSON itself
+    # (or base64 of it). Used instead of the file when set.
+    firebase_credentials_json: SecretStr = SecretStr("")
     auth_dev_mode: bool = False
 
     # --- Alerts / realtime tuning ---
@@ -66,6 +75,16 @@ class Settings(BaseSettings):
         # "FALLBACK_PROVIDER=" in .env means "not set".
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("database_url", "test_database_url", mode="before")
+    @classmethod
+    def _use_asyncpg(cls, value: object) -> object:
+        # Supabase, Render and Neon hand out "postgresql://..." URLs; we need the async driver.
+        if isinstance(value, str):
+            for prefix in ("postgres://", "postgresql://"):
+                if value.startswith(prefix):
+                    return "postgresql+asyncpg://" + value.removeprefix(prefix)
         return value
 
     @model_validator(mode="after")

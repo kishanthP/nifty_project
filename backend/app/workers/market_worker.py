@@ -101,7 +101,6 @@ class MarketWorker:
             with contextlib.suppress(Exception):
                 await self.lock.release()
             await self.redis.aclose()
-            await engine.dispose()
 
     # --- jobs ---
     async def _feed(self) -> None:
@@ -167,6 +166,23 @@ class MarketWorker:
             await asyncio.sleep(10)
 
 
+EMBEDDED_RESTART_SECONDS = 15
+
+
+async def run_embedded(settings: Settings) -> None:
+    """Run the worker inside the API process (RUN_WORKER_IN_API=true).
+
+    A separate worker service is restarted by Docker when it crashes; here we do
+    that ourselves, so the API keeps serving while the feed recovers.
+    """
+    while True:
+        try:
+            await MarketWorker(settings).run()
+        except Exception:
+            logger.exception("Market worker crashed, restarting in %ss", EMBEDDED_RESTART_SECONDS)
+        await asyncio.sleep(EMBEDDED_RESTART_SECONDS)
+
+
 async def main() -> None:
     settings = get_settings()
     setup_logging(settings.log_level)
@@ -181,6 +197,8 @@ async def main() -> None:
         await task
     except asyncio.CancelledError:
         logger.info("Worker stopped")
+    finally:
+        await engine.dispose()
 
 
 if __name__ == "__main__":

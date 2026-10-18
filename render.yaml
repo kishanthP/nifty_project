@@ -1,0 +1,68 @@
+# Render Blueprint: the API (with the market worker inside it) + a free Redis.
+# Render reads this file when you choose New → Blueprint. Guide: deploy/FREE-CLOUD.md
+#
+# Values marked "sync: false" are secrets. Render asks you for them once and
+# never stores them in this repository.
+
+services:
+  - type: web
+    name: nifty-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    # The image's start script (backend/start-web.sh) applies database migrations,
+    # then serves on the port Render gives it.
+    buildFilter:
+      paths:
+        - backend/**
+    healthCheckPath: /api/v1/health/live
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: AUTH_DEV_MODE
+        value: "false"
+      - key: INSTALL_DEV
+        value: "false"
+      # Render's free plan has no background workers, so the API runs the feed itself.
+      - key: RUN_WORKER_IN_API
+        value: "true"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: nifty-redis
+          property: connectionString
+      # Supabase's free plan allows about 15 connections.
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "5"
+      - key: MARKET_DATA_PROVIDER
+        value: angelone
+      - key: FALLBACK_PROVIDER
+        value: yahoo
+      # --- asked for when you create the Blueprint ---
+      - key: DATABASE_URL # Supabase → Connect → Session pooler
+        sync: false
+      - key: FRONTEND_URL # e.g. https://nifty-alerts.vercel.app
+        sync: false
+      - key: CORS_ORIGINS # same as FRONTEND_URL
+        sync: false
+      - key: ANGELONE_API_KEY
+        sync: false
+      - key: ANGELONE_CLIENT_CODE
+        sync: false
+      - key: ANGELONE_PIN
+        sync: false
+      - key: ANGELONE_TOTP_SECRET
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON # contents of firebase-service-account.json
+        sync: false
+
+  - type: keyvalue
+    name: nifty-redis
+    plan: free
+    region: singapore
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # only reachable by your Render services

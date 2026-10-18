@@ -136,9 +136,12 @@ Notes:
 
 ## Put it online (free)
 
-**[deploy/DEPLOY.md](deploy/DEPLOY.md)** walks through running the app 24/7 on an Oracle Cloud
-Always Free server. It uses a free DuckDNS address and HTTPS from Caddy, set up by
-`docker-compose.prod.yml`, which also takes daily database backups.
+Two free ways, each with a step-by-step guide:
+
+| Guide | Runs on | Needs |
+|---|---|---|
+| **[deploy/FREE-CLOUD.md](deploy/FREE-CLOUD.md)** | Supabase (database) + Render (API and worker, `render.yaml`) + Vercel (website) | Just GitHub sign-ins, **no card** |
+| **[deploy/DEPLOY.md](deploy/DEPLOY.md)** | One Oracle Cloud Always Free server (`docker-compose.prod.yml`, Caddy HTTPS, daily backups) | A Visa or Mastercard card for verification |
 
 ## Step 2: Google login and push notifications (Firebase, free)
 

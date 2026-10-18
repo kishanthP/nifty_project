@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -35,7 +37,17 @@ def create_app(
         app.state.notifier = notifier or build_notifier()
         app.state.hub = RealtimeHub(app.state.redis)
         await app.state.hub.start()
+
+        worker_task: asyncio.Task | None = None
+        if settings.run_worker_in_api:
+            from app.workers.market_worker import run_embedded
+
+            worker_task = asyncio.create_task(run_embedded(settings), name="market-worker")
         yield
+        if worker_task is not None:
+            worker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker_task
         await app.state.hub.stop()
         if redis is None:
             await app.state.redis.aclose()
