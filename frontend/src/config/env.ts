@@ -1,7 +1,11 @@
 const env = import.meta.env;
 
+// In production the API is served from the same address as the app (Caddy routes /api).
+const defaultApiUrl =
+  env.PROD && typeof window !== "undefined" ? window.location.origin : "http://localhost:8000";
+
 export const config = {
-  apiUrl: (env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, ""),
+  apiUrl: (env.VITE_API_URL || defaultApiUrl).replace(/\/$/, ""),
   authDevMode: env.VITE_AUTH_DEV_MODE === "true",
   firebase: {
     apiKey: env.VITE_FIREBASE_API_KEY ?? "",

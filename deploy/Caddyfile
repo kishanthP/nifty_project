@@ -1,0 +1,32 @@
+# Caddy: gets a free HTTPS certificate for $DOMAIN (Let's Encrypt) and renews it by itself.
+#   https://DOMAIN/api/...  -> FastAPI (REST + the live price WebSocket)
+#   https://DOMAIN/...      -> the built React app
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		# Hashed build files never change. Everything else (index.html, the push
+		# service worker) must be re-checked so updates reach the browser.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@other not path /assets/*
+		header @other Cache-Control "no-cache"
+
+		# A single-page app: unknown paths like /login load index.html.
+		try_files {path} /index.html
+		file_server
+	}
+}

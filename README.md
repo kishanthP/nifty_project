@@ -134,6 +134,12 @@ Notes:
 - The app only reads prices and never places orders. Angel One's static-IP rule is for placing orders.
 - Keep `.env` private. Your MPIN and TOTP secret can log in to your account. `.env` is git-ignored.
 
+## Put it online (free)
+
+**[deploy/DEPLOY.md](deploy/DEPLOY.md)** walks through running the app 24/7 on an Oracle Cloud
+Always Free server. It uses a free DuckDNS address and HTTPS from Caddy, set up by
+`docker-compose.prod.yml`, which also takes daily database backups.
+
 ## Step 2: Google login and push notifications (Firebase, free)
 
 1. Go to **https://console.firebase.google.com** and **create a project**.

@@ -4,6 +4,8 @@
 !.env.example
 backend/secrets/*
 !backend/secrets/.gitkeep
+# Database backups on the server
+backups/
 
 # Python
 __pycache__/
