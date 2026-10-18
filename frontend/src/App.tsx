@@ -5,7 +5,7 @@ import { Toaster } from "sonner";
 
 import { AuthProvider } from "./auth/AuthProvider";
 import { useAuth } from "./auth/context";
-import { usePrefersDark } from "./hooks/useNow";
+import { useTheme } from "./lib/theme";
 import Dashboard from "./pages/Dashboard";
 import LoginPage from "./pages/LoginPage";
 
@@ -38,7 +38,7 @@ function LoginRoute() {
 }
 
 export default function App() {
-  const dark = usePrefersDark();
+  const { dark } = useTheme();
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

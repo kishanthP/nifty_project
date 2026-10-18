@@ -8,15 +8,18 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useCandles } from "../hooks/queries";
-import { usePrefersDark } from "../hooks/useNow";
 import { formatPrice } from "../lib/format";
+import { readStorage, writeStorage } from "../lib/storage";
+import { useTheme } from "../lib/theme";
 import type { Alert, Quote } from "../types/api";
+import { EyeIcon, EyeOffIcon } from "./icons";
 
 // The chart library shows timestamps as UTC; shifting by +5:30 makes the axis read in IST.
 const IST_OFFSET_SECONDS = 19_800;
+const HIDDEN_KEY = "chart:hidden";
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -40,8 +43,15 @@ export default function PriceChart({ symbol, quote, alerts }: Props) {
   const seriesRef = useRef<ISeriesApi<"Area"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const lastTimeRef = useRef(0);
-  const dark = usePrefersDark();
+  const { dark } = useTheme();
   const { data: candles, isPending } = useCandles(symbol);
+  const [hidden, setHidden] = useState(() => readStorage(HIDDEN_KEY) === "1");
+
+  const toggleHidden = () => {
+    const next = !hidden;
+    setHidden(next);
+    writeStorage(HIDDEN_KEY, next ? "1" : null); // remembered per browser
+  };
 
   // Create the chart once.
   useEffect(() => {
@@ -93,6 +103,15 @@ export default function PriceChart({ symbol, quote, alerts }: Props) {
     chartRef.current?.timeScale().fitContent();
   }, [candles]);
 
+  // A hidden chart has no width, so its zoom is wrong; refit once it has been resized.
+  useEffect(() => {
+    if (hidden) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => chartRef.current?.timeScale().fitContent());
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [hidden]);
+
   // Extend the line with each live tick while the market is open.
   useEffect(() => {
     const series = seriesRef.current;
@@ -123,13 +142,29 @@ export default function PriceChart({ symbol, quote, alerts }: Props) {
 
   return (
     <section className="card p-4 sm:p-5" aria-label="Intraday chart">
-      <div className="mb-2 flex items-center justify-between">
+      <div className={`flex items-center justify-between gap-3 ${hidden ? "" : "mb-2"}`}>
         <h2 className="text-sm font-semibold text-muted">Intraday · 1 minute</h2>
-        {alerts.length > 0 && (
-          <span className="text-xs text-muted">Dashed lines = your active alerts</span>
-        )}
+        <div className="flex items-center gap-2">
+          {alerts.length > 0 && !hidden && (
+            <span className="hidden text-xs text-muted sm:inline">
+              Dashed lines = your active alerts
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={toggleHidden}
+            className="rounded-md p-2 text-muted hover:bg-surface-2 hover:text-fg"
+            title={hidden ? "Show chart" : "Hide chart"}
+            aria-label={hidden ? "Show chart" : "Hide chart"}
+            aria-pressed={hidden}
+            aria-controls="intraday-chart"
+          >
+            {hidden ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
+        </div>
       </div>
-      <div className="relative h-72 sm:h-80">
+      {/* Kept mounted while hidden so live ticks keep updating it. */}
+      <div id="intraday-chart" className="relative h-72 sm:h-80" hidden={hidden}>
         <div ref={containerRef} className="absolute inset-0" />
         {!isPending && (!candles || candles.length === 0) && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">

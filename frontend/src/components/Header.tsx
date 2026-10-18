@@ -2,9 +2,31 @@ import { toast } from "sonner";
 
 import { useAuth } from "../auth/context";
 import type { usePushNotifications } from "../hooks/usePushNotifications";
-import { BellIcon, BellOffIcon, LogOutIcon } from "./icons";
+import { nextTheme, setThemeChoice, type ThemeChoice, useTheme } from "../lib/theme";
+import { BellIcon, BellOffIcon, LogOutIcon, MonitorIcon, MoonIcon, SunIcon } from "./icons";
 
 type Push = ReturnType<typeof usePushNotifications>;
+
+const THEME_LABEL: Record<ThemeChoice, string> = { system: "System", light: "Light", dark: "Dark" };
+const THEME_ICON = { system: MonitorIcon, light: SunIcon, dark: MoonIcon };
+
+function ThemeToggle() {
+  const { choice } = useTheme();
+  const next = nextTheme(choice);
+  const Icon = THEME_ICON[choice];
+  const label = `Theme: ${THEME_LABEL[choice]} (click for ${THEME_LABEL[next]})`;
+  return (
+    <button
+      type="button"
+      onClick={() => setThemeChoice(next)}
+      className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-fg"
+      title={label}
+      aria-label={label}
+    >
+      <Icon />
+    </button>
+  );
+}
 
 const PILL = "inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm";
 
@@ -153,6 +175,7 @@ export default function Header({ push }: { push: Push }) {
           <span className="font-semibold">NIFTY 50 Alerts</span>
         </div>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <NotificationControl push={push} />
           <UserMenu />
         </div>
