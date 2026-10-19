@@ -2,10 +2,42 @@ import { toast } from "sonner";
 
 import { useAuth } from "../auth/context";
 import type { usePushNotifications } from "../hooks/usePushNotifications";
+import { playAlertSound, setSoundOn, useSoundOn } from "../lib/sound";
 import { otherTheme, setTheme, useTheme } from "../lib/theme";
-import { BellIcon, BellOffIcon, LogOutIcon, MoonIcon, SunIcon } from "./icons";
+import {
+  BellIcon,
+  BellOffIcon,
+  LogOutIcon,
+  MoonIcon,
+  SunIcon,
+  VolumeIcon,
+  VolumeOffIcon,
+} from "./icons";
 
 type Push = ReturnType<typeof usePushNotifications>;
+
+function SoundToggle() {
+  const on = useSoundOn();
+  const label = on
+    ? "Alert sounds on: ting = high alert, ting ting = low alert (click to mute)"
+    : "Alert sounds off (click to turn on)";
+  const toggle = () => {
+    setSoundOn(!on);
+    if (!on) playAlertSound("above"); // a preview, so the user hears it works
+  };
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-fg"
+      title={label}
+      aria-label={label}
+      aria-pressed={on}
+    >
+      {on ? <VolumeIcon /> : <VolumeOffIcon />}
+    </button>
+  );
+}
 
 function ThemeToggle() {
   const { theme, dark } = useTheme();
@@ -170,6 +202,7 @@ export default function Header({ push }: { push: Push }) {
           <span className="font-semibold">NIFTY 50 Alerts</span>
         </div>
         <div className="flex items-center gap-2">
+          <SoundToggle />
           <ThemeToggle />
           <NotificationControl push={push} />
           <UserMenu />

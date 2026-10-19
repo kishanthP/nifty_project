@@ -13,6 +13,7 @@ import { queryKeys, useAlerts, useQuote } from "../hooks/queries";
 import { useLiveFeed } from "../hooks/useLiveFeed";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { formatPrice } from "../lib/format";
+import { playAlertSound } from "../lib/sound";
 import type { AlertTriggeredEvent } from "../types/api";
 
 export default function Dashboard() {
@@ -20,6 +21,7 @@ export default function Dashboard() {
 
   const onAlert = useCallback(
     (event: AlertTriggeredEvent) => {
+      playAlertSound(event.condition, event.alert_id);
       toast.success(event.title, { description: event.body, duration: 20_000 });
       void queryClient.invalidateQueries({ queryKey: queryKeys.alerts });
       void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
