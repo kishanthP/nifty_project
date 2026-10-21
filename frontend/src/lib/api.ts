@@ -81,7 +81,7 @@ export const api = {
     request<Alert>(`/alerts/${id}`, { method: "PATCH", body: json(body) }),
   deleteAlert: (id: string) => request<void>(`/alerts/${id}`, { method: "DELETE" }),
 
-  notifications: () => request<NotificationItem[]>("/notifications?limit=20"),
+  notifications: () => request<NotificationItem[]>("/notifications?limit=10"),
 
   registerDevice: (token: string, userAgent: string) =>
     request<void>("/devices", { method: "POST", body: json({ token, user_agent: userAgent }) }),

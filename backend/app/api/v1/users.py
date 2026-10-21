@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, DbSession
 from app.models import Notification
 from app.schemas.users import NotificationOut, UserOut
+from app.services.alert_engine import HISTORY_LIMIT
 
 router = APIRouter()
 
@@ -19,7 +20,7 @@ async def me(user: CurrentUser) -> UserOut:
 async def notifications(
     user: CurrentUser,
     db: DbSession,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=HISTORY_LIMIT)] = HISTORY_LIMIT,
 ) -> list[NotificationOut]:
     rows = await db.scalars(
         select(Notification)

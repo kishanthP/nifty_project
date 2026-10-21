@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models import Alert, AlertStatus, DeviceToken, Notification, User
-from app.services.alert_engine import AlertEngine
+from app.services.alert_engine import HISTORY_LIMIT, AlertEngine
 from app.services.notifier.base import SendResult
 from tests.conftest import FakeNotifier, make_quote
 
@@ -268,3 +268,33 @@ async def test_range_with_oco_stops_other_side(session_factory, user, nifty_id, 
     await engine.drain()
     async with session_factory() as session:
         assert len((await session.scalars(select(Notification))).all()) == 1
+
+
+async def test_history_keeps_only_latest_ten(session_factory, user, nifty_id, notifier) -> None:
+    old = datetime.now(UTC) - timedelta(days=1)
+    async with session_factory() as session:
+        for i in range(HISTORY_LIMIT + 3):
+            session.add(
+                Notification(
+                    user_id=user.id,
+                    channel="log",
+                    title=f"old {i}",
+                    body="",
+                    status="sent",
+                    created_at=old + timedelta(minutes=i),
+                )
+            )
+        await session.commit()
+
+    await _add_alert(session_factory, user, nifty_id, "above", "22560")
+    await _engine(session_factory, notifier).on_quote(nifty_id, make_quote(22561))
+
+    async with session_factory() as session:
+        titles = list(
+            await session.scalars(
+                select(Notification.title).order_by(Notification.created_at.desc())
+            )
+        )
+    assert len(titles) == HISTORY_LIMIT
+    assert not titles[0].startswith("old")  # the new one is kept
+    assert "old 0" not in titles and "old 12" in titles  # the oldest went first

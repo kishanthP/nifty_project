@@ -9,6 +9,8 @@ How it stays correct:
   quick spike that touches your price and comes back is never missed.
 * "High & low" alerts with one-cancels-other stop their other side in the same
   transaction that triggers the first side.
+* Each user keeps only their latest HISTORY_LIMIT notifications; older ones are
+  deleted when a new alert fires (pending ones are never deleted before sending).
 """
 
 import asyncio
@@ -38,6 +40,8 @@ from app.services.notifier.base import Notifier, PushMessage
 from app.services.price_cache import PriceCache
 
 logger = logging.getLogger(__name__)
+
+HISTORY_LIMIT = 10  # notifications kept per user
 
 
 @dataclass
@@ -196,6 +200,7 @@ class AlertEngine:
                         body=body,
                     )
                 )
+            await self._trim_history(session, {row.user_id for row in rows})
             await session.commit()
 
         for item in triggered:
@@ -240,6 +245,25 @@ class AlertEngine:
         for group_id, condition, target in result:
             stopped[group_id].append((condition, target))
         return stopped
+
+    @staticmethod
+    async def _trim_history(session: AsyncSession, user_ids: set[uuid.UUID]) -> None:
+        """Delete each user's notifications beyond the latest HISTORY_LIMIT."""
+        await session.flush()
+        for user_id in user_ids:
+            latest = (
+                select(Notification.id)
+                .where(Notification.user_id == user_id)
+                .order_by(Notification.created_at.desc(), Notification.id.desc())
+                .limit(HISTORY_LIMIT)
+            )
+            await session.execute(
+                delete(Notification).where(
+                    Notification.user_id == user_id,
+                    Notification.status != NotificationStatus.PENDING,
+                    Notification.id.not_in(latest),
+                )
+            )
 
     # ------------------------------------------------------------ delivery
     async def dispatch(self, notification_ids: list[uuid.UUID] | None = None) -> int:

@@ -17,6 +17,7 @@ export default function NotificationHistory() {
       <h2 id="history-title" className="font-semibold">
         Recent notifications
       </h2>
+      <p className="text-xs text-muted">Your latest 10. Older ones are deleted automatically.</p>
       {isPending ? (
         <div className="mt-4 h-10 animate-pulse rounded-lg bg-surface-2" />
       ) : !data || data.length === 0 ? (
