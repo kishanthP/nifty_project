@@ -4,8 +4,8 @@ import type { AlertCondition } from "../types/api";
 import { readStorage, writeStorage } from "./storage";
 
 // Alert sounds, made with the Web Audio API (no sound files):
-//   above (high price) -> "ting"       one bright bell tone
-//   below (low price)  -> "ting ting"  two lower bell tones
+//   above (price up)   -> "ting ting"            two bright bell tones
+//   below (price down) -> "ting ting ting ting"  four lower bell tones
 //
 // Browsers only allow sound after the user has interacted with the page, so the
 // audio engine is unlocked on the first click / tap / key press.
@@ -15,13 +15,11 @@ export interface Ting {
   at: number; // seconds after the start
 }
 
+const TING_GAP_SECONDS = 0.22;
+
 export function soundPattern(condition: AlertCondition): Ting[] {
-  return condition === "above"
-    ? [{ frequency: 1568, at: 0 }] // G6
-    : [
-        { frequency: 1175, at: 0 }, // D6
-        { frequency: 1175, at: 0.22 },
-      ];
+  const [frequency, count] = condition === "above" ? [1568, 2] : [1175, 4]; // G6 / D6
+  return Array.from({ length: count }, (_, i) => ({ frequency, at: i * TING_GAP_SECONDS }));
 }
 
 const STORAGE_KEY = "sound";

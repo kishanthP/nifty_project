@@ -19,7 +19,7 @@ type Push = ReturnType<typeof usePushNotifications>;
 function SoundToggle() {
   const on = useSoundOn();
   const label = on
-    ? "Alert sounds on: ting = high alert, ting ting = low alert (click to mute)"
+    ? "Alert sounds on: 2 tings = price up, 4 tings = price down (click to mute)"
     : "Alert sounds off (click to turn on)";
   const toggle = () => {
     setSoundOn(!on);
