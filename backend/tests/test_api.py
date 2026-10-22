@@ -229,3 +229,50 @@ async def test_range_alert_counts_two_toward_limit(client, cache) -> None:
     )
     assert response.status_code == 422 and "at most 3" in response.json()["detail"]
     client.app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------- multiple (batch) alerts
+async def test_batch_alerts_are_independent(client, cache) -> None:
+    """The user's example: NIFTY at 22,300 → 'above 22,310' and 'above 22,320' together."""
+    await cache.set_quote(make_quote(22300))
+    response = await client.post(
+        "/api/v1/alerts/batch",
+        json={"items": [{"target_price": 22310}, {"target_price": 22320}, {"target_price": 22290}]},
+        headers=auth(),
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert [(a["condition"], a["target_price"]) for a in created] == [
+        ("above", 22310.0),
+        ("above", 22320.0),
+        ("below", 22290.0),
+    ]
+    assert all(a["group_id"] is None and a["status"] == "active" for a in created)
+    listed = (await client.get("/api/v1/alerts?status=active", headers=auth())).json()
+    assert len(listed) == 3
+
+
+async def test_batch_alerts_validation_is_all_or_nothing(client, cache) -> None:
+    await cache.set_quote(make_quote(22300))
+    cases = [
+        ([{"target_price": 22310}, {"target_price": 22310}], "listed twice"),
+        ([{"target_price": 22310}, {"target_price": 22290, "condition": "above"}], "already at"),
+        ([{"target_price": 22310}, {"target_price": 22300}], "current price"),
+    ]
+    for items, message in cases:
+        response = await client.post("/api/v1/alerts/batch", json={"items": items}, headers=auth())
+        assert response.status_code == 422, items
+        assert message in response.json()["detail"]
+    too_many = [{"target_price": 22310 + i} for i in range(11)]
+    response = await client.post("/api/v1/alerts/batch", json={"items": too_many}, headers=auth())
+    assert response.status_code == 422
+    assert (await client.get("/api/v1/alerts", headers=auth())).json() == []
+
+
+async def test_batch_alerts_respect_limit(client, cache) -> None:
+    client.app.dependency_overrides[get_settings] = lambda: Settings(max_active_alerts_per_user=2)
+    await cache.set_quote(make_quote(22300))
+    items = [{"target_price": p} for p in (22310, 22320, 22330)]
+    response = await client.post("/api/v1/alerts/batch", json={"items": items}, headers=auth())
+    assert response.status_code == 422 and "at most 2" in response.json()["detail"]
+    client.app.dependency_overrides.clear()

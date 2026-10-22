@@ -298,3 +298,13 @@ async def test_history_keeps_only_latest_ten(session_factory, user, nifty_id, no
     assert len(titles) == HISTORY_LIMIT
     assert not titles[0].startswith("old")  # the new one is kept
     assert "old 0" not in titles and "old 12" in titles  # the oldest went first
+
+
+async def test_multiple_levels_fire_one_by_one(session_factory, user, nifty_id, notifier) -> None:
+    await _add_alert(session_factory, user, nifty_id, "above", "22310")
+    await _add_alert(session_factory, user, nifty_id, "above", "22320")
+    engine = _engine(session_factory, notifier)
+    first = await engine.on_quote(nifty_id, make_quote(22315))
+    assert [a.target_price for a in first] == [Decimal("22310")]
+    second = await engine.on_quote(nifty_id, make_quote(22321))
+    assert [a.target_price for a in second] == [Decimal("22320")]

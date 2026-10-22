@@ -55,3 +55,50 @@ export function parsePriceInput(raw: string): number {
   if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return Number.NaN;
   return Number(cleaned);
 }
+
+// --- "Multiple": several independent alerts at once ---
+export const MAX_BATCH_ALERTS = 10;
+
+export interface PriceRow {
+  input: string;
+  manualCondition: AlertCondition | null;
+}
+
+export interface CheckedRow {
+  empty: boolean;
+  price: number;
+  condition: AlertCondition | null;
+  error: string | null;
+}
+
+/** Check each "Multiple" row (same rules as the backend). Empty rows are skipped. */
+export function checkRows(rows: PriceRow[], current: number | null): CheckedRow[] {
+  const seen = new Set<string>();
+  return rows.map(({ input, manualCondition }) => {
+    if (input.trim() === "") return { empty: true, price: Number.NaN, condition: null, error: null };
+    const price = parsePriceInput(input);
+    if (!(price > 0)) {
+      return { empty: false, price, condition: null, error: "Enter a price like 22560 or 22560.50" };
+    }
+    const condition = manualCondition ?? (current != null ? inferCondition(price, current) : null);
+    const result = { empty: false, price, condition };
+    if (condition == null) {
+      return { ...result, error: current == null ? "Choose up or down." : "That's the current price. Pick another." };
+    }
+    const key = `${condition} ${price}`;
+    if (seen.has(key)) return { ...result, error: "This price is already in the list." };
+    seen.add(key);
+    if (current != null && isConditionMet(condition, price, current)) {
+      return {
+        ...result,
+        error: `Already ${condition === "above" ? "at or above" : "at or below"} this price. Choose a ${condition === "above" ? "higher" : "lower"} one.`,
+      };
+    }
+    return { ...result, error: null };
+  });
+}
+
+/** "above ₹22,310.00, above ₹22,320.00" */
+export function describeBatch(items: { condition: AlertCondition; price: number }[]): string {
+  return items.map(({ condition, price }) => `${condition} ₹${formatPrice(price)}`).join(", ");
+}

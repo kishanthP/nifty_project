@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../lib/api";
-import type { AlertCreate, AlertRangeCreate, AlertUpdate } from "../types/api";
+import type { AlertBatchCreate, AlertCreate, AlertRangeCreate, AlertUpdate } from "../types/api";
 
 export const queryKeys = {
   quote: (symbol: string) => ["quote", symbol] as const,
@@ -57,6 +57,14 @@ export function useCreateRangeAlert() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: AlertRangeCreate) => api.createRangeAlert(body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.alerts }),
+  });
+}
+
+export function useCreateBatchAlerts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AlertBatchCreate) => api.createBatchAlerts(body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.alerts }),
   });
 }

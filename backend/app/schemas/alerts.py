@@ -30,6 +30,23 @@ class AlertRangeCreate(BaseModel):
     note: str | None = Field(default=None, max_length=200)
 
 
+MAX_BATCH_ALERTS = 10
+
+
+class AlertBatchItem(BaseModel):
+    target_price: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    # Leave empty to decide automatically from the current price.
+    condition: AlertCondition | None = None
+
+
+class AlertBatchCreate(BaseModel):
+    """'Multiple': several independent alerts (e.g. above 22,310 and above 22,320) at once."""
+
+    symbol: str = Field(default="NIFTY50", max_length=32)
+    items: list[AlertBatchItem] = Field(min_length=1, max_length=MAX_BATCH_ALERTS)
+    note: str | None = Field(default=None, max_length=200)
+
+
 class AlertUpdate(BaseModel):
     target_price: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
     condition: AlertCondition | None = None

@@ -60,6 +60,12 @@ export interface AlertRangeCreate {
   note?: string;
 }
 
+export interface AlertBatchCreate {
+  symbol: string;
+  items: { target_price: number; condition?: AlertCondition }[];
+  note?: string;
+}
+
 export interface AlertCreate {
   symbol: string;
   target_price: number;

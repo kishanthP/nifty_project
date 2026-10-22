@@ -4,7 +4,13 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.api.deps import AppSettings, Cache, CurrentUser, DbSession
-from app.schemas.alerts import AlertCreate, AlertOut, AlertRangeCreate, AlertUpdate
+from app.schemas.alerts import (
+    AlertBatchCreate,
+    AlertCreate,
+    AlertOut,
+    AlertRangeCreate,
+    AlertUpdate,
+)
 from app.services import alerts as alert_service
 from app.services.alerts import AlertError
 
@@ -49,6 +55,21 @@ async def create_range_alert(
     quote = await cache.get_quote(data.symbol.upper())
     try:
         alerts = await alert_service.create_range_alert(
+            db, user, data, quote, settings.max_active_alerts_per_user
+        )
+    except AlertError as exc:
+        raise _http_error(exc) from exc
+    return [alert_service.to_out(alert) for alert in alerts]
+
+
+@router.post("/batch", response_model=list[AlertOut], status_code=status.HTTP_201_CREATED)
+async def create_batch_alerts(
+    data: AlertBatchCreate, user: CurrentUser, db: DbSession, cache: Cache, settings: AppSettings
+) -> list[AlertOut]:
+    """Multiple: several independent alerts (e.g. above 22,310 and above 22,320) at once."""
+    quote = await cache.get_quote(data.symbol.upper())
+    try:
+        alerts = await alert_service.create_batch_alerts(
             db, user, data, quote, settings.max_active_alerts_per_user
         )
     except AlertError as exc:

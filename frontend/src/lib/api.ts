@@ -1,6 +1,7 @@
 import { config } from "../config/env";
 import type {
   Alert,
+  AlertBatchCreate,
   AlertCreate,
   AlertRangeCreate,
   AlertUpdate,
@@ -77,6 +78,8 @@ export const api = {
   createAlert: (body: AlertCreate) => request<Alert>("/alerts", { method: "POST", body: json(body) }),
   createRangeAlert: (body: AlertRangeCreate) =>
     request<Alert[]>("/alerts/range", { method: "POST", body: json(body) }),
+  createBatchAlerts: (body: AlertBatchCreate) =>
+    request<Alert[]>("/alerts/batch", { method: "POST", body: json(body) }),
   updateAlert: (id: string, body: AlertUpdate) =>
     request<Alert>(`/alerts/${id}`, { method: "PATCH", body: json(body) }),
   deleteAlert: (id: string) => request<void>(`/alerts/${id}`, { method: "DELETE" }),

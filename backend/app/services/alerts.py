@@ -7,7 +7,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Alert, AlertCondition, AlertStatus, Instrument, User
-from app.schemas.alerts import AlertCreate, AlertOut, AlertRangeCreate, AlertUpdate
+from app.schemas.alerts import (
+    AlertBatchCreate,
+    AlertCreate,
+    AlertOut,
+    AlertRangeCreate,
+    AlertUpdate,
+)
 from app.schemas.market import Quote
 from app.services.formatting import format_inr, to_price
 
@@ -158,6 +164,48 @@ async def create_range_alert(
             note=note,
             group_id=group_id,
             one_cancels_other=data.one_cancels_other,
+        )
+        alert.instrument = instrument
+        alerts.append(alert)
+    db.add_all(alerts)
+    await db.commit()
+    for alert in alerts:
+        await db.refresh(alert)
+    return alerts
+
+
+async def create_batch_alerts(
+    db: AsyncSession, user: User, data: AlertBatchCreate, quote: Quote | None, max_active: int
+) -> list[Alert]:
+    """'Multiple': independent alerts saved in one transaction (all or nothing)."""
+    instrument = await get_active_instrument(db, data.symbol)
+    if await _count_active(db, user) + len(data.items) > max_active:
+        raise AlertError(f"You can have at most {max_active} active alerts. Delete some first.")
+
+    current = to_price(quote.ltp) if quote else None
+    note = (data.note or "").strip() or None
+    seen: set[tuple[AlertCondition, Decimal]] = set()
+    alerts = []
+    for item in data.items:
+        target = to_price(item.target_price)
+        condition = item.condition
+        if condition is None:
+            if current is None:
+                raise AlertError("Live price is not available yet. Choose 'above' or 'below'.")
+            condition = infer_condition(target, current)
+        if (condition, target) in seen:
+            raise AlertError(f"{format_inr(target)} ({condition}) is listed twice.")
+        seen.add((condition, target))
+        if current is not None:
+            ensure_not_met(instrument.name, condition, target, current)
+        alert = Alert(
+            user_id=user.id,
+            instrument_id=instrument.id,
+            condition=condition,
+            target_price=target,
+            base_price=current,
+            status=AlertStatus.ACTIVE,
+            note=note,
         )
         alert.instrument = instrument
         alerts.append(alert)

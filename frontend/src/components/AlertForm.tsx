@@ -2,28 +2,38 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { DEFAULT_SYMBOL } from "../config/env";
-import { useCreateAlert, useCreateRangeAlert } from "../hooks/queries";
+import { useCreateAlert, useCreateBatchAlerts, useCreateRangeAlert } from "../hooks/queries";
 import type { PushState } from "../hooks/usePushNotifications";
 import {
+  checkRows,
   describeAlert,
+  describeBatch,
   describeRange,
   distanceToTarget,
   inferCondition,
   isConditionMet,
   isFarFromPrice,
+  MAX_BATCH_ALERTS,
   parsePriceInput,
+  type CheckedRow,
+  type PriceRow,
   rangeProblem,
   roundPrice,
 } from "../lib/alerts";
 import { formatPrice } from "../lib/format";
 import type { AlertCondition, Quote } from "../types/api";
-import { ArrowDownIcon, ArrowUpIcon } from "./icons";
+import { ArrowDownIcon, ArrowUpIcon, XIcon } from "./icons";
 
-type Mode = "single" | "range";
+type Mode = "single" | "range" | "multiple";
 
 const SINGLE_STEPS = [-50, -10, 10, 50];
 const HIGH_STEPS = [10, 25, 50];
 const LOW_STEPS = [-10, -25, -50];
+const MULTI_STEPS = [10, 20, 30, -10, -20, -30];
+const EMPTY_ROWS: PriceRow[] = [
+  { input: "", manualCondition: null },
+  { input: "", manualCondition: null },
+];
 
 interface Props {
   quote: Quote | null;
@@ -78,6 +88,92 @@ function QuickPicks(props: { steps: number[]; disabled: boolean; label: string; 
   );
 }
 
+function MultiPriceRows(props: {
+  rows: PriceRow[];
+  checked: CheckedRow[];
+  current: number | null;
+  onChange: (index: number, row: PriceRow) => void;
+  onRemove: (index: number) => void;
+  onAdd: () => void;
+  onPick: (step: number) => void;
+}) {
+  const { rows, checked, current } = props;
+  return (
+    <>
+      <p className="text-sm text-muted">
+        Set several prices at once. Each one is a separate alert and notifies you on its own.
+      </p>
+      <ul className="space-y-2">
+        {rows.map((row, index) => {
+          const { condition, error } = checked[index];
+          const up = condition === "above";
+          return (
+            <li key={index}>
+              <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-1 items-center rounded-lg border border-line bg-surface-2 focus-within:border-accent">
+                  <span className="pl-3 text-muted">₹</span>
+                  <input
+                    aria-label={`Price ${index + 1}`}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={row.input}
+                    onChange={(event) => props.onChange(index, { input: event.target.value, manualCondition: null })}
+                    placeholder={
+                      current != null ? roundPrice(Math.round(current) + 10 * (index + 1)).toFixed(2) : "22560.00"
+                    }
+                    className="w-full min-w-0 bg-transparent px-2 py-2 tabular-nums outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={condition == null}
+                  onClick={() => props.onChange(index, { ...row, manualCondition: up ? "below" : "above" })}
+                  title="Click to switch between above and below"
+                  aria-label={condition ? `Goes ${condition}, click to switch` : "Direction"}
+                  className={`flex w-24 shrink-0 items-center justify-center gap-1 rounded-lg border px-2 py-2 text-sm font-medium ${
+                    condition == null
+                      ? "border-line text-muted"
+                      : up
+                        ? "border-up bg-up-soft text-up"
+                        : "border-down bg-down-soft text-down"
+                  }`}
+                >
+                  {condition === "below" ? <ArrowDownIcon /> : <ArrowUpIcon />}
+                  {condition ?? "—"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => props.onRemove(index)}
+                  disabled={rows.length <= 1}
+                  aria-label={`Remove price ${index + 1}`}
+                  className="shrink-0 rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-down disabled:opacity-30"
+                >
+                  <XIcon />
+                </button>
+              </div>
+              {error && <p className="mt-1 text-xs text-down">{error}</p>}
+            </li>
+          );
+        })}
+      </ul>
+      <button
+        type="button"
+        onClick={props.onAdd}
+        disabled={rows.length >= MAX_BATCH_ALERTS}
+        className="w-full rounded-lg border border-dashed border-line px-3 py-1.5 text-sm text-muted hover:bg-surface-2 hover:text-fg disabled:opacity-50"
+      >
+        {rows.length >= MAX_BATCH_ALERTS ? `Up to ${MAX_BATCH_ALERTS} prices` : "+ Add price"}
+      </button>
+      <QuickPicks
+        steps={MULTI_STEPS}
+        disabled={current == null}
+        label="Fill the next empty price relative to the current price"
+        onPick={props.onPick}
+      />
+    </>
+  );
+}
+
 export default function AlertForm({ quote, pushState }: Props) {
   const [mode, setMode] = useState<Mode>("single");
   const [note, setNote] = useState("");
@@ -88,9 +184,12 @@ export default function AlertForm({ quote, pushState }: Props) {
   const [highInput, setHighInput] = useState("");
   const [lowInput, setLowInput] = useState("");
   const [oneCancelsOther, setOneCancelsOther] = useState(false);
+  // "Multiple"
+  const [rows, setRows] = useState<PriceRow[]>(EMPTY_ROWS);
 
   const createAlert = useCreateAlert();
   const createRange = useCreateRangeAlert();
+  const createBatch = useCreateBatchAlerts();
 
   const name = quote?.name ?? "NIFTY 50";
   const current = quote?.ltp ?? null;
@@ -111,12 +210,26 @@ export default function AlertForm({ quote, pushState }: Props) {
   const rangeFar =
     validRange && current != null && (isFarFromPrice(high, current) || isFarFromPrice(low, current));
 
-  const pending = createAlert.isPending || createRange.isPending;
+  // Multiple
+  const checked = checkRows(rows, current);
+  const filled = checked.filter((row) => !row.empty);
+  const batchValid = filled.length > 0 && filled.every((row) => row.error == null);
+  const setRow = (index: number, row: PriceRow) => setRows(rows.map((old, i) => (i === index ? row : old)));
+  const fillNextRow = (step: number) => {
+    const value = nearby(step);
+    const empty = rows.findIndex((row) => row.input.trim() === "");
+    if (empty >= 0) setRow(empty, { input: value, manualCondition: null });
+    else if (rows.length < MAX_BATCH_ALERTS) setRows([...rows, { input: value, manualCondition: null }]);
+  };
+
+  const pending = createAlert.isPending || createRange.isPending || createBatch.isPending;
   const canSubmit =
     !pending &&
     (mode === "single"
       ? validTarget && condition != null && !alreadyMet
-      : validRange && rangeError == null);
+      : mode === "range"
+        ? validRange && rangeError == null
+        : batchValid);
 
   const switchMode = (next: Mode) => {
     setMode(next);
@@ -137,6 +250,17 @@ export default function AlertForm({ quote, pushState }: Props) {
         toast.success("Alert created", { description: describeAlert(name, condition, target) });
         setInput("");
         setManualCondition(null);
+      } else if (mode === "multiple") {
+        const items = filled.map((row) => ({ price: row.price, condition: row.condition as AlertCondition }));
+        await createBatch.mutateAsync({
+          symbol: DEFAULT_SYMBOL,
+          items: items.map(({ price, condition }) => ({ target_price: price, condition })),
+          note: trimmedNote,
+        });
+        toast.success(`${items.length} alert${items.length === 1 ? "" : "s"} created`, {
+          description: describeBatch(items),
+        });
+        setRows(EMPTY_ROWS);
       } else {
         await createRange.mutateAsync({
           symbol: DEFAULT_SYMBOL,
@@ -166,6 +290,7 @@ export default function AlertForm({ quote, pushState }: Props) {
             [
               ["single", "One price"],
               ["range", "High & low"],
+              ["multiple", "Multiple"],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -248,6 +373,16 @@ export default function AlertForm({ quote, pushState }: Props) {
               </p>
             )}
           </>
+        ) : mode === "multiple" ? (
+          <MultiPriceRows
+            rows={rows}
+            checked={checked}
+            current={current}
+            onChange={setRow}
+            onRemove={(index) => setRows(rows.filter((_, i) => i !== index))}
+            onAdd={() => setRows([...rows, { input: "", manualCondition: null }])}
+            onPick={fillNextRow}
+          />
         ) : (
           <>
             <div className="space-y-2 rounded-lg border border-line p-3">
@@ -326,7 +461,15 @@ export default function AlertForm({ quote, pushState }: Props) {
           disabled={!canSubmit}
           className="w-full rounded-lg bg-accent px-4 py-2.5 font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {pending ? "Creating…" : mode === "single" ? "Create alert" : "Create high & low alerts"}
+          {pending
+            ? "Creating…"
+            : mode === "single"
+              ? "Create alert"
+              : mode === "range"
+                ? "Create high & low alerts"
+                : filled.length > 1
+                  ? `Create ${filled.length} alerts`
+                  : "Create alert"}
         </button>
 
         {pushState === "off" && (

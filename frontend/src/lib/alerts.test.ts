@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  checkRows,
+  describeBatch,
   describeRange,
   distanceToTarget,
   inferCondition,
@@ -79,5 +81,39 @@ describe("parsePriceInput", () => {
     expect(parsePriceInput("abc")).toBeNaN();
     expect(parsePriceInput("22560.123")).toBeNaN();
     expect(parsePriceInput("")).toBeNaN();
+  });
+});
+
+describe("checkRows (Multiple)", () => {
+  const row = (input: string, manualCondition: "above" | "below" | null = null) => ({ input, manualCondition });
+
+  it("accepts the user's example: 22,310 and 22,320 above 22,300", () => {
+    const checked = checkRows([row("22310"), row("22320")], 22300);
+    expect(checked.map((r) => [r.condition, r.error])).toEqual([
+      ["above", null],
+      ["above", null],
+    ]);
+    expect(describeBatch([{ condition: "above", price: 22310 }, { condition: "below", price: 22290 }])).toBe(
+      "above ₹22,310.00, below ₹22,290.00",
+    );
+  });
+
+  it("skips empty rows and flags invalid, duplicate and already-met prices", () => {
+    const [empty, invalid, first, duplicate, met, current] = checkRows(
+      [row(""), row("abc"), row("22310"), row("22,310"), row("22290", "above"), row("22300")],
+      22300,
+    );
+    expect(empty).toMatchObject({ empty: true, error: null });
+    expect(invalid.error).toMatch(/Enter a price/);
+    expect(first.error).toBeNull();
+    expect(duplicate.error).toMatch(/already in the list/);
+    expect(met.error).toMatch(/Already at or above/);
+    expect(current.error).toMatch(/current price/);
+  });
+
+  it("lets the user flip the direction", () => {
+    const [down] = checkRows([row("22320", "below")], 22300);
+    expect(down.condition).toBe("below");
+    expect(down.error).toMatch(/at or below/);
   });
 });
