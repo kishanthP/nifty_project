@@ -141,7 +141,7 @@ function NotificationControl({ push }: { push: Push }) {
           <summary className={`${PILL} cursor-pointer list-none text-up`}>
             <BellIcon /> <span className="hidden sm:inline">Notifications on</span>
           </summary>
-          <div className="card absolute right-0 z-20 mt-2 w-56 p-1 shadow-lg">
+          <div className="card menu absolute right-0 z-20 mt-2 w-56 p-1 shadow-lg">
             <button type="button" onClick={onTest} className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2">
               Send test notification
             </button>
@@ -175,7 +175,7 @@ function UserMenu() {
         )}
         <span className="hidden max-w-40 truncate text-sm md:inline">{label}</span>
       </summary>
-      <div className="card absolute right-0 z-20 mt-2 w-60 p-1 shadow-lg">
+      <div className="card menu absolute right-0 z-20 mt-2 w-60 p-1 shadow-lg">
         <div className="px-3 py-2 text-sm">
           <p className="truncate font-medium">{label}</p>
           {user.email && <p className="truncate text-xs text-muted">{user.email}</p>}
@@ -195,7 +195,7 @@ function UserMenu() {
 
 export default function Header({ push }: { push: Push }) {
   return (
-    <header className="sticky top-0 z-10 border-b border-line bg-surface/85 backdrop-blur">
+    <header className="sticky top-0 z-10 border-b border-line bg-[var(--header-bg)] backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <img src="/favicon.svg" alt="" className="h-8 w-8" />
