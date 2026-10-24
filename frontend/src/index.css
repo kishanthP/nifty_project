@@ -31,10 +31,10 @@
 :root[data-theme="dark"] {
   --bg: #000000;
   --surface: rgba(255, 255, 255, 0.09);
-  --surface-2: rgba(255, 255, 255, 0.06);
-  --border: #2a2d34;
+  --surface-2: rgba(255, 255, 255, 0.09);
+  --border: #3a3e47;
   --fg: #f5f7fb;
-  --muted: #a3aab8;
+  --muted: #b8bfcc;
   --accent: #2563eb;
   --accent-fg: #ffffff;
   --up: #4ade80;
@@ -44,8 +44,8 @@
   --warn: #fbbf24;
   --warn-soft: rgba(251, 191, 36, 0.14);
   /* Crystal glass on black */
-  --card-bg: rgba(255, 255, 255, 0.075); /* one even glass tone, no gradient */
-  --card-border: rgba(255, 255, 255, 0.14);
+  --card-bg: rgba(255, 255, 255, 0.14); /* one even glass tone, no gradient */
+  --card-border: rgba(255, 255, 255, 0.2);
   --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.04),
     0 0 0 1px rgba(0, 0, 0, 0.6), 0 18px 40px rgba(0, 0, 0, 0.7);
   --card-blur: blur(20px) saturate(140%);
@@ -58,10 +58,10 @@
   :root:not([data-theme="light"]) {
     --bg: #000000;
     --surface: rgba(255, 255, 255, 0.09);
-    --surface-2: rgba(255, 255, 255, 0.06);
-    --border: #2a2d34;
+    --surface-2: rgba(255, 255, 255, 0.09);
+    --border: #3a3e47;
     --fg: #f5f7fb;
-    --muted: #a3aab8;
+    --muted: #b8bfcc;
     --accent: #2563eb;
     --accent-fg: #ffffff;
     --up: #4ade80;
@@ -71,8 +71,8 @@
     --warn: #fbbf24;
     --warn-soft: rgba(251, 191, 36, 0.14);
     /* Crystal glass on black */
-    --card-bg: rgba(255, 255, 255, 0.075); /* one even glass tone, no gradient */
-    --card-border: rgba(255, 255, 255, 0.14);
+    --card-bg: rgba(255, 255, 255, 0.14); /* one even glass tone, no gradient */
+    --card-border: rgba(255, 255, 255, 0.2);
     --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(255, 255, 255, 0.04),
     0 0 0 1px rgba(0, 0, 0, 0.6), 0 18px 40px rgba(0, 0, 0, 0.7);
     --card-blur: blur(20px) saturate(140%);
