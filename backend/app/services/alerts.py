@@ -3,7 +3,7 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Alert, AlertCondition, AlertStatus, Instrument, User
@@ -16,6 +16,8 @@ from app.schemas.alerts import (
 )
 from app.schemas.market import Quote
 from app.services.formatting import format_inr, to_price
+
+HISTORY_LIMIT = 10  # triggered / stopped alerts kept per user
 
 
 class AlertError(Exception):
@@ -216,6 +218,27 @@ async def create_batch_alerts(
     return alerts
 
 
+async def trim_history(db: AsyncSession, user_ids: set[uuid.UUID]) -> None:
+    """Delete each user's triggered / stopped alerts beyond the latest HISTORY_LIMIT."""
+    await db.flush()
+    for user_id in user_ids:
+        latest = (
+            select(Alert.id)
+            .where(Alert.user_id == user_id, Alert.status != AlertStatus.ACTIVE)
+            .order_by(func.coalesce(Alert.triggered_at, Alert.updated_at).desc(), Alert.id.desc())
+            .limit(HISTORY_LIMIT)
+        )
+        await db.execute(
+            delete(Alert)
+            .where(
+                Alert.user_id == user_id,
+                Alert.status != AlertStatus.ACTIVE,
+                Alert.id.not_in(latest),
+            )
+            .execution_options(synchronize_session=False)
+        )
+
+
 async def get_user_alert(db: AsyncSession, user: User, alert_id: uuid.UUID) -> Alert:
     alert = await db.scalar(select(Alert).where(Alert.id == alert_id, Alert.user_id == user.id))
     if alert is None:
@@ -253,6 +276,8 @@ async def update_alert(
     alert.status = new_status
     if data.note is not None:
         alert.note = data.note.strip() or None
+    if new_status != AlertStatus.ACTIVE:
+        await trim_history(db, {user.id})
     await db.commit()
     await db.refresh(alert)
     return alert

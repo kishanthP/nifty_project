@@ -16,6 +16,8 @@ interface Props {
 
 type Tab = "active" | "history";
 
+const HISTORY_LIMIT = 10;
+
 function AlertRow({ alert, quote, now }: { alert: Alert; quote: Quote | null; now: number }) {
   const deleteAlert = useDeleteAlert();
   const updateAlert = useUpdateAlert();
@@ -115,7 +117,7 @@ function AlertRow({ alert, quote, now }: { alert: Alert; quote: Quote | null; no
           title={confirming ? "Click again to delete" : "Delete alert"}
           aria-label={confirming ? "Confirm delete" : "Delete alert"}
         >
-          {confirming ? "Delete?" : <TrashIcon />}
+          {confirming ? "Delete" : <TrashIcon />}
         </button>
       </div>
     </li>
@@ -135,7 +137,8 @@ export default function AlertList({ alerts, loading, quote }: Props) {
     );
   const history = alerts
     .filter((a) => a.status !== "active")
-    .sort((a, b) => (b.triggered_at ?? b.updated_at).localeCompare(a.triggered_at ?? a.updated_at));
+    .sort((a, b) => (b.triggered_at ?? b.updated_at).localeCompare(a.triggered_at ?? a.updated_at))
+    .slice(0, HISTORY_LIMIT); // the server also deletes older ones
   const shown = tab === "active" ? active : history;
 
   return (
@@ -174,7 +177,7 @@ export default function AlertList({ alerts, loading, quote }: Props) {
         <p className="mt-4 text-sm text-muted">
           {tab === "active"
             ? "No active alerts. Create one above — e.g. notify me when NIFTY goes above 22,560."
-            : "Triggered and stopped alerts appear here. Re-arm one to use it again."}
+            : "Your latest 10 triggered and stopped alerts appear here. Re-arm one to use it again."}
         </p>
       ) : (
         <ul className="mt-2 divide-y divide-line">

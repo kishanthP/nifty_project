@@ -308,3 +308,33 @@ async def test_multiple_levels_fire_one_by_one(session_factory, user, nifty_id, 
     assert [a.target_price for a in first] == [Decimal("22310")]
     second = await engine.on_quote(nifty_id, make_quote(22321))
     assert [a.target_price for a in second] == [Decimal("22320")]
+
+
+async def test_alert_history_keeps_only_latest_ten(
+    session_factory, user, nifty_id, notifier
+) -> None:
+    old = datetime.now(UTC) - timedelta(days=1)
+    async with session_factory() as session:
+        for i in range(12):
+            session.add(
+                Alert(
+                    user_id=user.id,
+                    instrument_id=nifty_id,
+                    condition="above",
+                    target_price=Decimal(22000 + i),
+                    status=AlertStatus.TRIGGERED,
+                    triggered_at=old + timedelta(minutes=i),
+                    triggered_price=Decimal(22000 + i),
+                )
+            )
+        await session.commit()
+    await _add_alert(session_factory, user, nifty_id, "above", "22560")
+    await _add_alert(session_factory, user, nifty_id, "above", "22700")  # stays active
+    await _engine(session_factory, notifier).on_quote(nifty_id, make_quote(22561))
+
+    statuses = await _statuses(session_factory)
+    history = [key for key, status in statuses.items() if status != AlertStatus.ACTIVE]
+    assert len(history) == 10
+    assert "above 22560.00" in history  # the newest is kept
+    assert "above 22000.00" not in history and "above 22001.00" not in history  # oldest deleted
+    assert statuses["above 22700.00"] == AlertStatus.ACTIVE

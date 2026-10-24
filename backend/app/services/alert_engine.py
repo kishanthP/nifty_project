@@ -9,8 +9,9 @@ How it stays correct:
   quick spike that touches your price and comes back is never missed.
 * "High & low" alerts with one-cancels-other stop their other side in the same
   transaction that triggers the first side.
-* Each user keeps only their latest HISTORY_LIMIT notifications; older ones are
-  deleted when a new alert fires (pending ones are never deleted before sending).
+* Each user keeps only their latest HISTORY_LIMIT notifications and their latest 10
+  triggered / stopped alerts; older ones are deleted when a new alert fires
+  (pending notifications are never deleted before sending).
 """
 
 import asyncio
@@ -35,6 +36,7 @@ from app.models import (
     NotificationStatus,
 )
 from app.schemas.market import Quote
+from app.services.alerts import trim_history
 from app.services.formatting import format_inr, to_price
 from app.services.notifier.base import Notifier, PushMessage
 from app.services.price_cache import PriceCache
@@ -200,7 +202,9 @@ class AlertEngine:
                         body=body,
                     )
                 )
-            await self._trim_history(session, {row.user_id for row in rows})
+            user_ids = {row.user_id for row in rows}
+            await self._trim_history(session, user_ids)
+            await trim_history(session, user_ids)
             await session.commit()
 
         for item in triggered:
